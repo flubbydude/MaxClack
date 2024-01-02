@@ -1,0 +1,66 @@
+services:
+  frontend:
+    container_name: maxclack-frontend
+    build: ./MaxClack-frontend
+    networks:
+      - frontend
+    # https://docs.docker.com/compose/file-watch/
+    # using watch for hot reloading
+    develop:
+      watch:
+        - action: sync
+          path: ./MaxClack-frontend
+          target: /app
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: ./MaxClack-frontend/package.json
+    ports:
+      # map frontend container's 5173 port to local 5173 port
+      # so that we can test with it
+      - "5173:5173"
+    environment:
+      MAXCLACK_BACKEND_URL: http://maxclack-backend:5000
+  backend:
+    container_name: maxclack-backend
+    networks:
+      - frontend
+      - backend
+    build: ./MaxClack-backend
+    command: --debug
+
+    # https://docs.docker.com/compose/file-watch/
+    # using watch for hot reloading
+    develop:
+      watch:
+        - action: sync
+          path: ./MaxClack-backend
+          target: /app
+          ignore:
+            - .venv
+        - action: rebuild
+          path: ./MaxClack-backend/requirements.txt
+    ports:
+      # map frontend container's 5000 port to local 5000 port
+      # so that we can test with it
+      - "5000:5000"
+    environment:
+      MAXCLACK_DATABASE_URL: 
+    depends_on:
+      - db
+  db:
+    container_name: maxclack-database
+    image: mysql
+    networks:
+      - backend
+    environment:
+      MYSQL_ROOT_PASSWORD: my-secret-pw
+    # use persistent data in the database
+    # by storing it in a volume
+    volumes:
+      - database-data:/var/lib/mysql
+volumes:
+  database-data:
+networks:
+  backend:
+  frontend:
