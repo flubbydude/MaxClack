@@ -10,6 +10,15 @@ export default defineConfig({
     vue(),
     vueJsx(),
   ],
+  server: {
+    proxy: {
+      '/api': {
+        target: process.env.VUE_APP_BACKEND_URL,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))

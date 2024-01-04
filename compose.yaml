@@ -20,7 +20,7 @@ services:
       # so that we can test with it
       - "5173:5173"
     environment:
-      MAXCLACK_BACKEND_URL: http://maxclack-backend:5000
+      VUE_APP_BACKEND_URL: http://maxclack-backend:5000
   backend:
     container_name: maxclack-backend
     networks:

@@ -1,7 +1,16 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 defineProps<{
   msg: string
-}>()
+}>();
+
+const response_data = ref("");
+
+function get_data() {
+  fetch('/api')
+    .then(response => response.text())
+    .then(response => response_data.value = response)
+}
 </script>
 
 <template>
@@ -12,6 +21,8 @@ defineProps<{
       <a href="https://vitejs.dev/" target="_blank" rel="noopener">Vite</a> +
       <a href="https://vuejs.org/" target="_blank" rel="noopener">Vue 3</a>. What's next?
     </h3>
+    <button @click=get_data>get data</button>
+    <p>{{ response_data }}</p>
   </div>
 </template>
 
@@ -33,6 +44,7 @@ h3 {
 }
 
 @media (min-width: 1024px) {
+
   .greetings h1,
   .greetings h3 {
     text-align: left;
