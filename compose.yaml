@@ -34,8 +34,8 @@ services:
     develop:
       watch:
         - action: sync
-          path: ./MaxClack-backend
-          target: /app
+          path: ./MaxClack-backend/src
+          target: /app/src
           ignore:
             - .venv
         - action: rebuild
@@ -45,22 +45,27 @@ services:
       # so that we can test with it
       - "5000:5000"
     environment:
-      MAXCLACK_DATABASE_URL: 
+      MAXCLACK_DATABASE_URI: "mysql+pymysql://root:my-secret-pw@maxclack-database/max_clack_data"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
   db:
     container_name: maxclack-database
-    image: mysql
+    image: mysql:8.0
     networks:
       - backend
     environment:
+      MYSQL_DATABASE: max_clack_data
       MYSQL_ROOT_PASSWORD: my-secret-pw
     # use persistent data in the database
     # by storing it in a volume
-    volumes:
-      - database-data:/var/lib/mysql
-volumes:
-  database-data:
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: /usr/bin/mysql --password=$$MYSQL_ROOT_PASSWORD --execute "SHOW DATABASES"
+      interval: 5s
+      timeout: 20s
+      retries: 10
 networks:
   backend:
   frontend:
