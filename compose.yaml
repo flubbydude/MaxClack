@@ -45,7 +45,10 @@ services:
       # so that we can test with it
       - "5000:5000"
     environment:
-      MAXCLACK_DATABASE_URI: "mysql+pymysql://root:my-secret-pw@maxclack-database/max_clack_data"
+      MAXCLACK_DATABASE_URL: maxclack-database
+      MAXCLACK_DATABASE_USERNAME: root
+      MAXCLACK_DATABASE_PASSWORD: ${MAXCLACK_ROOT_PASSWORD:-my_secret_pw}
+      MAXCLACK_DATABASE_NAME: ${MAXCLACK_DATABASE_NAME:-max_clack_data}
     depends_on:
       db:
         condition: service_healthy
@@ -55,8 +58,8 @@ services:
     networks:
       - backend
     environment:
-      MYSQL_DATABASE: max_clack_data
-      MYSQL_ROOT_PASSWORD: my-secret-pw
+      MYSQL_DATABASE: ${MAXCLACK_DATABASE_NAME:-max_clack_data}
+      MYSQL_ROOT_PASSWORD: ${MAXCLACK_ROOT_PASSWORD:-my_secret_pw}
     # use persistent data in the database
     # by storing it in a volume
     ports:

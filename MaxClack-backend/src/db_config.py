@@ -63,5 +63,10 @@ class SingleplayerMatch(BaseModel):
 
     user: Mapped['User'] = relationship(back_populates='singleplayer_matches')
 
+    def __init__(self, user: User, game_text: str, game_duration_seconds: float):
+        self.user = user
+        self.game_text = game_text
+        self.game_duration_seconds = game_duration_seconds
+
     def __repr__(self) -> str:
         return self._repr_helper(user=self.user)
