@@ -61,7 +61,7 @@ GENPROMPT_REPR_LEN = 30
 
 
 class GeneratorPrompt(BaseModel):
-    """Table containing prompts that were sent to ChatGPT to create GameTexts"""
+    """Table containing prompts that are sent to ChatGPT to create GameTexts"""
 
     __tablename__ = 'generator_prompt'
 

@@ -1,7 +1,8 @@
 import csv
 import os
 
-from flask import Flask
+from flask import Flask, abort, request
+from sqlalchemy import func, select
 from db_config import GeneratorPrompt, PromptTag, db
 
 app = Flask(__name__)
@@ -17,9 +18,35 @@ app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{
 db.init_app(app)
 
 
-@app.get('/')
-def hello_world():
-    return "Hello, World!"
+@app.get('/prompt/random')
+def get_random_prompt():
+    tags = request.args.getlist('tag')
+
+    # make sure user doesnt input a billion tags
+    if len(tags) > 20:
+        abort(413, 'Too many tags inputted to filter by')
+
+    stmt = select(GeneratorPrompt.text).order_by(func.random())
+
+    if not tags:
+        stmt = stmt.where(
+            GeneratorPrompt.chooseable_in_random == True)
+    else:
+        # where all of the tags in tags
+        # appear in GeneratorPrompt.tags
+        stmt = stmt.where(
+            *(GeneratorPrompt.tags.any(name=tag)
+              for tag in tags)
+        )
+
+    row = db.session.execute(stmt).first()
+
+    if row is None:
+        return '', 204
+
+    result = row[0]
+
+    return result
 
 
 with app.app_context():
