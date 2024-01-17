@@ -1,9 +1,9 @@
 import csv
 import os
-
+from typing import TypedDict
 from flask import Flask, abort, request
 from sqlalchemy import func, select
-from db_config import GeneratorPrompt, PromptTag, db
+from db_config import GeneratorPrompt, GeneratorPromptInfo, PromptTag, User, db
 
 app = Flask(__name__)
 
@@ -18,15 +18,19 @@ app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{
 db.init_app(app)
 
 
+class PromptResponse(TypedDict):
+    prompt: GeneratorPromptInfo
+
+
 @app.get('/prompt/random')
-def get_random_prompt():
+def get_random_prompt() -> PromptResponse:
     tags = request.args.getlist('tag')
 
     # make sure user doesnt input a billion tags
     if len(tags) > 20:
         abort(413, 'Too many tags inputted to filter by')
 
-    stmt = select(GeneratorPrompt.text).order_by(func.random())
+    stmt = select(GeneratorPrompt).order_by(func.random())
 
     if not tags:
         stmt = stmt.where(
@@ -42,11 +46,49 @@ def get_random_prompt():
     row = db.session.execute(stmt).first()
 
     if row is None:
-        return '', 204
+        abort(204)
 
-    result = row[0]
+    prompt = row.t[0]
 
-    return result
+    return {
+        'prompt': prompt.to_dict()
+    }
+
+
+@app.post('/prompt')
+def create_prompt() -> PromptResponse:
+    json = request.json
+
+    if not isinstance(json, GeneratorPromptInfo):
+        abort(400, "POST '/prompt' body must contain format:" + str(
+              GeneratorPromptInfo.__annotations__))
+
+    # TODO: make sure they don't input 20 billion tags
+    if len(json.get('tags', [])) > 20:
+        abort(413, "POST '/prompt' body contains too many tags")
+
+    username = json.get('creator')
+    if username:
+        maybe_user = db.session.execute(
+            select(User).where(User.username == username)
+        ).first()
+
+        if maybe_user is None:
+            abort(400, 'No such user exists')
+
+        creator = maybe_user.t[0]
+    else:
+        creator = None
+
+    tags = PromptTag.get_or_create_all(tag_names)
+
+    prompt = GeneratorPrompt(json['text'], tags=tags, creator=creator)
+
+    db.session.add(prompt)
+
+    db.session.commit()
+
+    return PromptResponse(prompt=prompt.to_dict())
 
 
 with app.app_context():
@@ -62,9 +104,7 @@ with app.app_context():
             for row in reader:
                 text, *tag_names = row
 
-                # get or create PromptTag
-                tags: list[PromptTag] = [PromptTag.query.where(
-                    PromptTag.name == tag_name).first() or PromptTag(tag_name) for tag_name in tag_names]
+                tags: list[PromptTag] = PromptTag.get_or_create_all(tag_names)
 
                 db.session.add(GeneratorPrompt(
                     text, True, tags))
