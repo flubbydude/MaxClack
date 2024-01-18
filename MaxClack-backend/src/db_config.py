@@ -39,8 +39,11 @@ class User(BaseModel):
     username: Mapped[str] = mapped_column(
         String(20), unique=True)
 
-    generator_prompts: Mapped[list['GeneratorPrompt']
-                              ] = relationship(back_populates='creator')
+    created_generator_prompts: Mapped[list['GeneratorPrompt']
+                                      ] = relationship(back_populates='creator')
+
+    created_prompt_tags: Mapped[list['PromptTag']
+                                ] = relationship(back_populates='creator')
 
     singleplayer_matches: Mapped[list['SingleplayerMatch']] = relationship(
         back_populates='user')
@@ -50,6 +53,24 @@ class User(BaseModel):
 
     def __repr__(self) -> str:
         return self._repr_helper(username=self.username, id=self.id)
+
+    @classmethod
+    def get_or_create(cls, username: str):
+        """Gets or creates the admin user, assumes that you are
+        working in the app context and therefore have a db session open
+
+        Pushes the created user into the db session if created"""
+        maybe_user = db.session.execute(
+            select(User).where(User.username == username)
+        ).first()
+
+        if maybe_user is None:
+            user = User(username)
+            db.session.add(user)
+        else:
+            user = maybe_user.t[0]
+
+        return user
 
 
 class PromptTagAssociation(BaseModel):
@@ -64,7 +85,7 @@ GENPROMPT_REPR_LEN = 30
 
 
 class GeneratorPromptInfo(TypedDict):
-    creator: NotRequired[str]
+    creator: str
     text: str
     tags: NotRequired[list[str]]
 
@@ -77,7 +98,7 @@ class GeneratorPrompt(BaseModel):
     id: Mapped[int] = mapped_column(primary_key=True)
     text: Mapped[str] = mapped_column(String(2048))
     chooseable_in_random: Mapped[bool] = mapped_column(index=True)
-    creator_id: Mapped[Optional[int]] = mapped_column(ForeignKey('creator.id'))
+    creator_id: Mapped[Optional[int]] = mapped_column(ForeignKey('user.id'))
 
     game_texts: Mapped[list['GameText']] = relationship(
         back_populates='generator_prompt')
@@ -85,14 +106,15 @@ class GeneratorPrompt(BaseModel):
     tags: Mapped[list['PromptTag']] = relationship(
         secondary='prompt_tag_association', back_populates='prompts')
 
-    creator: Mapped[Optional['User']] = relationship(
-        back_populates='generator_prompts')
+    creator: Mapped['User'] = relationship(
+        back_populates='created_generator_prompts')
 
     def __init__(self,
                  text: str,
+                 creator: 'User',
                  chooseable_in_random: bool = False,
                  tags: Optional[list['PromptTag']] = None,
-                 creator: Optional['User'] = None):
+                 ):
 
         self.text = text
         self.chooseable_in_random = chooseable_in_random
@@ -108,10 +130,8 @@ class GeneratorPrompt(BaseModel):
         return self._repr_helper(text=temp_text)
 
     def to_dict(self) -> GeneratorPromptInfo:
-        result: GeneratorPrompt.PromptInfo = {'text': self.text}
-
-        if self.creator:
-            result['creator'] = self.creator.username
+        result: GeneratorPromptInfo = {
+            'text': self.text, 'creator': self.creator.username}
 
         if self.tags:
             result['tags'] = [tag.name for tag in self.tags]
@@ -125,17 +145,23 @@ class PromptTag(BaseModel):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     name: Mapped[str] = mapped_column(String(64), unique=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey('user.id'))
+
     description: Mapped[Optional[str]] = mapped_column(String(1028))
 
     prompts: Mapped[list['GeneratorPrompt']] = relationship(
         secondary='prompt_tag_association', back_populates='tags')
 
-    def __init__(self, name: str, description: Optional[str] = None):
+    creator: Mapped['User'] = relationship(
+        back_populates='created_prompt_tags')
+
+    def __init__(self, name: str, creator: 'User', description: Optional[str] = None):
         self.name = name
+        self.creator = creator
         self.description = description
 
     @classmethod
-    def get_or_create(cls, name: str) -> 'PromptTag':
+    def get_or_create(cls, name: str, creator: 'User') -> 'PromptTag':
         """Gets the tag or creates one in the current session if it does not exist.
         Must be in a DB session + app context.
 
@@ -147,14 +173,14 @@ class PromptTag(BaseModel):
             PromptTag.name == name)).first()
 
         if result is None:
-            return PromptTag(name)
-        else:
-            ret = result.t[0]
+            ret = PromptTag(name, creator)
             db.session.add(ret)
             return ret
+        else:
+            return result.t[0]
 
     @classmethod
-    def get_or_create_all(cls, tag_names: list[str]) -> list['PromptTag']:
+    def get_or_create_all(cls, tag_names: list[str], creator: 'User') -> list['PromptTag']:
         """Gets the tag or creates one in the current session if it does not exist.
         Must be in a DB session + app context.
 
@@ -162,7 +188,7 @@ class PromptTag(BaseModel):
             PromptTag: the existing tag with the given name,
                        or a new tag if such a tag does not exist
         """
-        return [cls.get_or_create(tag_name) for tag_name in tag_names]
+        return [cls.get_or_create(tag_name, creator) for tag_name in tag_names]
 
 
 GAMETEXT_REPR_LEN = 30

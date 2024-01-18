@@ -64,23 +64,22 @@ def create_prompt() -> PromptResponse:
               GeneratorPromptInfo.__annotations__))
 
     # TODO: make sure they don't input 20 billion tags
-    if len(json.get('tags', [])) > 20:
+    tag_names = json.get('tags')
+    if tag_names and len(tag_names) > 20:
         abort(413, "POST '/prompt' body contains too many tags")
 
-    username = json.get('creator')
-    if username:
-        maybe_user = db.session.execute(
-            select(User).where(User.username == username)
-        ).first()
+    username = json['creator']
+    maybe_user = db.session.execute(
+        select(User).where(User.username == username)
+    ).first()
 
-        if maybe_user is None:
-            abort(400, 'No such user exists')
+    if maybe_user is None:
+        abort(400, f'No such user {username!r} exists')
 
-        creator = maybe_user.t[0]
-    else:
-        creator = None
+    creator = maybe_user.t[0]
 
-    tags = PromptTag.get_or_create_all(tag_names)
+    tags = PromptTag.get_or_create_all(
+        tag_names, creator) if tag_names else None
 
     prompt = GeneratorPrompt(json['text'], tags=tags, creator=creator)
 
@@ -95,8 +94,11 @@ with app.app_context():
     # create tables in the tb if they do not exist
     db.create_all()
 
+    admin_user = User.get_or_create('admin')
+
     # if generator prompt table is empty,
     # generate prompts from the csv
+    # and assign them to the admin user
     if GeneratorPrompt.query.first() is None:
         # populate random prompts with the CSV file
         with open('random_prompts.csv') as f:
@@ -104,9 +106,10 @@ with app.app_context():
             for row in reader:
                 text, *tag_names = row
 
-                tags: list[PromptTag] = PromptTag.get_or_create_all(tag_names)
+                tags: list[PromptTag] = PromptTag.get_or_create_all(
+                    tag_names, admin_user)
 
                 db.session.add(GeneratorPrompt(
-                    text, True, tags))
+                    text, admin_user, True, tags))
 
-        db.session.commit()
+    db.session.commit()
