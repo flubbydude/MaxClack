@@ -5,7 +5,7 @@ from flask_sqlalchemy.model import Model
 from sqlalchemy import ForeignKey, String, select
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.sql import func
-from typing import TYPE_CHECKING, Any, NotRequired, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, NotRequired, Optional, TypedDict, cast
 
 
 class _BaseModel(DeclarativeBase):
@@ -90,6 +90,10 @@ class GeneratorPromptInfo(TypedDict):
     tags: NotRequired[list[str]]
 
 
+class GeneratorPromptInfoWithId(GeneratorPromptInfo):
+    id: int
+
+
 class GeneratorPrompt(BaseModel):
     """Table containing prompts that are sent to ChatGPT to create GameTexts"""
 
@@ -129,12 +133,24 @@ class GeneratorPrompt(BaseModel):
 
         return self._repr_helper(text=temp_text)
 
-    def to_dict(self) -> GeneratorPromptInfo:
+    def to_dict(self):
         result: GeneratorPromptInfo = {
             'text': self.text, 'creator': self.creator.username}
 
         if self.tags:
             result['tags'] = [tag.name for tag in self.tags]
+
+        if self.id is not None:
+            return cast(GeneratorPromptInfoWithId, result | {"id": self.id})
+
+        return result
+
+    def to_dict_with_id(self):
+        result = self.to_dict()
+
+        if not isinstance(result, GeneratorPromptInfoWithId):
+            raise ValueError(
+                "GeneratorPrompt.to_dict_with_id() called on an instance that does not have an id")
 
         return result
 
