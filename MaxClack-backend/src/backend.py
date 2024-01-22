@@ -66,6 +66,15 @@ def get_random_prompt() -> PromptResponse:
 
 @app.get('/prompt/<int:id>')
 def get_prompt_by_id(id: int):
+    """Gets the GeneratorPrompt object from the db based on its id.
+
+    Args:
+        id (int): The id of the prompt to search for
+
+    Returns:
+        PromptResponse: The prompt that was found in the database
+    """
+
     result = db.session.execute(
         select(GeneratorPrompt).where(
             GeneratorPrompt.id == id
@@ -80,8 +89,17 @@ def get_prompt_by_id(id: int):
     return PromptResponse(prompt=prompt.to_dict_with_id())
 
 
+MAX_TAGS_PER_GENERATOR_PROMPT = 100
+
+
 @app.post('/prompt')
 def create_prompt():
+    """Creates a prompt in the database with the given information.
+
+    Returns:
+        PromptResponse: The prompt that was created in the database, along with a 201 (created) response code
+    """
+
     json = request.json
 
     if not isinstance(json, GeneratorPromptInfo):
@@ -90,7 +108,7 @@ def create_prompt():
 
     # TODO: make sure they don't input 20 billion tags
     tag_names = json.get('tags')
-    if tag_names and len(tag_names) > 20:
+    if tag_names and len(tag_names) > MAX_TAGS_PER_GENERATOR_PROMPT:
         abort(413, "POST '/prompt' body contains too many tags")
 
     username = json['creator']
