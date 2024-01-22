@@ -46,6 +46,7 @@ def get_random_prompt() -> PromptResponse:
         # appear in GeneratorPrompt.tags
 
         # TODO: idk if this is optimized cuz idk SQL or MySQL well enough.
+        # try debugging and checking
         stmt = stmt.where(
             or_(
                 *(GeneratorPrompt.tags.any(name=tag)
@@ -56,12 +57,27 @@ def get_random_prompt() -> PromptResponse:
     row = db.session.execute(stmt).first()
 
     if row is None:
-        abort(204)
+        abort(204, "A prompt with the given variables does not exist")
 
     prompt = row.t[0]
 
     return PromptResponse(prompt=prompt.to_dict_with_id())
 
+
+@app.get('/prompt/<int:id>')
+def get_prompt_by_id(id: int):
+    result = db.session.execute(
+        select(GeneratorPrompt).where(
+            GeneratorPrompt.id == id
+        )
+    ).first()
+
+    if not result:
+        abort(404, "A prompt with the given parameter(s) does not exist")
+
+    prompt = result.t[0]
+
+    return PromptResponse(prompt=prompt.to_dict_with_id())
 
 
 @app.post('/prompt')
