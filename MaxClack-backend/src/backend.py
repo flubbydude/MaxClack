@@ -2,8 +2,8 @@ import csv
 import os
 from typing import TypedDict
 from flask import Flask, abort, request
-from sqlalchemy import func, select
-from db_config import GeneratorPrompt, GeneratorPromptInfo, PromptTag, User, db
+from sqlalchemy import func, select, or_
+from db_config import GeneratorPrompt, GeneratorPromptInfo, GeneratorPromptInfoWithId, PromptTag, User, db
 
 app = Flask(__name__)
 
@@ -19,28 +19,38 @@ db.init_app(app)
 
 
 class PromptResponse(TypedDict):
-    prompt: GeneratorPromptInfo
+    prompt: GeneratorPromptInfoWithId
 
 
 @app.get('/prompt/random')
 def get_random_prompt() -> PromptResponse:
+    """Gets a random GeneratorPrompt from the database,
+    specifically one where the field "chooseable_in_random == True".
+
+    Tags may be passed in as
+    URL args (for example, "/prompt/random?tag=sports&tag=movies").
+    If tags are passed, all of the prompts are searched for a random
+    prompt tagged with either sports or movies.
+
+    Returns:
+        PromptResponse: The prompt that was found in the database
+    """
+
     tags = request.args.getlist('tag')
 
-    # make sure user doesnt input a billion tags
-    if len(tags) > 20:
-        abort(413, 'Too many tags inputted to filter by')
+    stmt = select(GeneratorPrompt).where(
+        GeneratorPrompt.chooseable_in_random == True).order_by(func.random())
 
-    stmt = select(GeneratorPrompt).order_by(func.random())
-
-    if not tags:
-        stmt = stmt.where(
-            GeneratorPrompt.chooseable_in_random == True)
-    else:
+    if tags:
         # where all of the tags in tags
         # appear in GeneratorPrompt.tags
+
+        # TODO: idk if this is optimized cuz idk SQL or MySQL well enough.
         stmt = stmt.where(
-            *(GeneratorPrompt.tags.any(name=tag)
-              for tag in tags)
+            or_(
+                *(GeneratorPrompt.tags.any(name=tag)
+                  for tag in tags)
+            )
         )
 
     row = db.session.execute(stmt).first()
@@ -50,13 +60,12 @@ def get_random_prompt() -> PromptResponse:
 
     prompt = row.t[0]
 
-    return {
-        'prompt': prompt.to_dict()
-    }
+    return PromptResponse(prompt=prompt.to_dict_with_id())
+
 
 
 @app.post('/prompt')
-def create_prompt() -> PromptResponse:
+def create_prompt():
     json = request.json
 
     if not isinstance(json, GeneratorPromptInfo):
@@ -87,13 +96,14 @@ def create_prompt() -> PromptResponse:
 
     db.session.commit()
 
-    return PromptResponse(prompt=prompt.to_dict())
+    return PromptResponse(prompt=prompt.to_dict_with_id()), 201
 
 
 with app.app_context():
-    # create tables in the tb if they do not exist
+    # create tables in the db if they do not exist
     db.create_all()
 
+    # get or create the admin user
     admin_user = User.get_or_create('admin')
 
     # if generator prompt table is empty,
