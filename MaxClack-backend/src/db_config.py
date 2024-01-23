@@ -145,14 +145,12 @@ class GeneratorPrompt(BaseModel):
 
         return result
 
-    def to_dict_with_id(self):
-        result = self.to_dict()
-
-        if not isinstance(result, GeneratorPromptInfoWithId):
+    def to_dict_with_id(self) -> GeneratorPromptInfoWithId:
+        if self.id is None:
             raise ValueError(
                 "GeneratorPrompt.to_dict_with_id() called on an instance that does not have an id")
-
-        return result
+        
+        return cast(GeneratorPromptInfoWithId, self.to_dict())
 
 
 class PromptTag(BaseModel):

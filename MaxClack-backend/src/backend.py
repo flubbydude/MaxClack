@@ -1,8 +1,10 @@
 import csv
 import os
+
 from typing import TypedDict
 from flask import Flask, abort, request
 from sqlalchemy import func, select, or_
+from pydantic import TypeAdapter, ValidationError
 from db_config import GeneratorPrompt, GeneratorPromptInfo, GeneratorPromptInfoWithId, PromptTag, User, db
 
 app = Flask(__name__)
@@ -16,6 +18,9 @@ app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{
     MAXCLACK_DATABASE_USERNAME}:{MAXCLACK_DATABASE_PASSWORD}@{MAXCLACK_DATABASE_URL}/{MAXCLACK_DATABASE_NAME}"
 
 db.init_app(app)
+
+
+GeneratorPromptInfoValidator = TypeAdapter(GeneratorPromptInfo)
 
 
 class PromptResponse(TypedDict):
@@ -100,18 +105,18 @@ def create_prompt():
         PromptResponse: The prompt that was created in the database, along with a 201 (created) response code
     """
 
-    json = request.json
+    prompt_info_json = request.json
 
-    if not isinstance(json, GeneratorPromptInfo):
-        abort(400, "POST '/prompt' body must contain format:" + str(
-              GeneratorPromptInfo.__annotations__))
-
-    # TODO: make sure they don't input 20 billion tags
-    tag_names = json.get('tags')
+    try:
+        prompt_info = GeneratorPromptInfoValidator.validate_python(prompt_info_json)
+    except ValidationError as e:   
+        return e.errors(include_input=False), 400
+        
+    tag_names = prompt_info.get('tags')
     if tag_names and len(tag_names) > MAX_TAGS_PER_GENERATOR_PROMPT:
         abort(413, "POST '/prompt' body contains too many tags")
 
-    username = json['creator']
+    username = prompt_info['creator']
     maybe_user = db.session.execute(
         select(User).where(User.username == username)
     ).first()
@@ -124,7 +129,7 @@ def create_prompt():
     tags = PromptTag.get_or_create_all(
         tag_names, creator) if tag_names else None
 
-    prompt = GeneratorPrompt(json['text'], tags=tags, creator=creator)
+    prompt = GeneratorPrompt(prompt_info['text'], tags=tags, creator=creator)
 
     db.session.add(prompt)
 
