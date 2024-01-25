@@ -2,10 +2,10 @@ import datetime
 
 from flask_sqlalchemy import SQLAlchemy
 from flask_sqlalchemy.model import Model
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, select
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.sql import func
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, NotRequired, Optional, TypedDict, cast
 
 
 class _BaseModel(DeclarativeBase):
@@ -39,6 +39,12 @@ class User(BaseModel):
     username: Mapped[str] = mapped_column(
         String(20), unique=True)
 
+    created_generator_prompts: Mapped[list['GeneratorPrompt']
+                                      ] = relationship(back_populates='creator')
+
+    created_prompt_tags: Mapped[list['PromptTag']
+                                ] = relationship(back_populates='creator')
+
     singleplayer_matches: Mapped[list['SingleplayerMatch']] = relationship(
         back_populates='user')
 
@@ -47,6 +53,24 @@ class User(BaseModel):
 
     def __repr__(self) -> str:
         return self._repr_helper(username=self.username, id=self.id)
+
+    @classmethod
+    def get_or_create(cls, username: str):
+        """Gets or creates the admin user, assumes that you are
+        working in the app context and therefore have a db session open
+
+        Pushes the created user into the db session if created"""
+        maybe_user = db.session.execute(
+            select(User).where(User.username == username)
+        ).first()
+
+        if maybe_user is None:
+            user = User(username)
+            db.session.add(user)
+        else:
+            user = maybe_user.t[0]
+
+        return user
 
 
 class PromptTagAssociation(BaseModel):
@@ -60,14 +84,26 @@ class PromptTagAssociation(BaseModel):
 GENPROMPT_REPR_LEN = 30
 
 
+class GeneratorPromptInfo(TypedDict):
+    creator: str
+    text: str
+    tags: NotRequired[list[str]]
+    chooseable_in_random: NotRequired[bool]
+
+
+class GeneratorPromptInfoWithId(GeneratorPromptInfo):
+    id: int
+
+
 class GeneratorPrompt(BaseModel):
-    """Table containing prompts that were sent to ChatGPT to create GameTexts"""
+    """Table containing prompts that are sent to ChatGPT to create GameTexts"""
 
     __tablename__ = 'generator_prompt'
 
     id: Mapped[int] = mapped_column(primary_key=True)
     text: Mapped[str] = mapped_column(String(2048))
     chooseable_in_random: Mapped[bool] = mapped_column(index=True)
+    creator_id: Mapped[Optional[int]] = mapped_column(ForeignKey('user.id'))
 
     game_texts: Mapped[list['GameText']] = relationship(
         back_populates='generator_prompt')
@@ -75,10 +111,20 @@ class GeneratorPrompt(BaseModel):
     tags: Mapped[list['PromptTag']] = relationship(
         secondary='prompt_tag_association', back_populates='prompts')
 
-    def __init__(self, text: str, chooseable_in_random: bool = False, tags: Optional[list['PromptTag']] = None):
+    creator: Mapped['User'] = relationship(
+        back_populates='created_generator_prompts')
+
+    def __init__(self,
+                 text: str,
+                 creator: 'User',
+                 chooseable_in_random: bool = False,
+                 tags: Optional[list['PromptTag']] = None,
+                 ):
+
         self.text = text
         self.chooseable_in_random = chooseable_in_random
         self.tags = tags if tags is not None else []
+        self.creator = creator
 
     def __repr__(self) -> str:
         if len(self.text) > GENPROMPT_REPR_LEN:
@@ -88,6 +134,25 @@ class GeneratorPrompt(BaseModel):
 
         return self._repr_helper(text=temp_text)
 
+    def to_dict(self):
+        result: GeneratorPromptInfo = {
+            'text': self.text, 'creator': self.creator.username}
+
+        if self.tags:
+            result['tags'] = [tag.name for tag in self.tags]
+
+        if self.id is not None:
+            return cast(GeneratorPromptInfoWithId, result | {"id": self.id})
+
+        return result
+
+    def to_dict_with_id(self) -> GeneratorPromptInfoWithId:
+        if self.id is None:
+            raise ValueError(
+                "GeneratorPrompt.to_dict_with_id() called on an instance that does not have an id")
+        
+        return cast(GeneratorPromptInfoWithId, self.to_dict())
+
 
 class PromptTag(BaseModel):
     __tablename__ = 'prompt_tag'
@@ -95,14 +160,50 @@ class PromptTag(BaseModel):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     name: Mapped[str] = mapped_column(String(64), unique=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey('user.id'))
+
     description: Mapped[Optional[str]] = mapped_column(String(1028))
 
     prompts: Mapped[list['GeneratorPrompt']] = relationship(
         secondary='prompt_tag_association', back_populates='tags')
 
-    def __init__(self, name: str, description: Optional[str] = None):
+    creator: Mapped['User'] = relationship(
+        back_populates='created_prompt_tags')
+
+    def __init__(self, name: str, creator: 'User', description: Optional[str] = None):
         self.name = name
+        self.creator = creator
         self.description = description
+
+    @classmethod
+    def get_or_create(cls, name: str, creator: 'User') -> 'PromptTag':
+        """Gets the tag or creates one in the current session if it does not exist.
+        Must be in a DB session + app context.
+
+        Returns:
+            PromptTag: the existing tag with the given name,
+                       or a new tag if such a tag does not exist
+        """
+        result = db.session.execute(select(PromptTag).where(
+            PromptTag.name == name)).first()
+
+        if result is None:
+            ret = PromptTag(name, creator)
+            db.session.add(ret)
+            return ret
+        else:
+            return result.t[0]
+
+    @classmethod
+    def get_or_create_all(cls, tag_names: list[str], creator: 'User') -> list['PromptTag']:
+        """Gets the tag or creates one in the current session if it does not exist.
+        Must be in a DB session + app context.
+
+        Returns:
+            PromptTag: the existing tag with the given name,
+                       or a new tag if such a tag does not exist
+        """
+        return [cls.get_or_create(tag_name, creator) for tag_name in tag_names]
 
 
 GAMETEXT_REPR_LEN = 30
