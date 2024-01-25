@@ -88,6 +88,7 @@ class GeneratorPromptInfo(TypedDict):
     creator: str
     text: str
     tags: NotRequired[list[str]]
+    chooseable_in_random: NotRequired[bool]
 
 
 class GeneratorPromptInfoWithId(GeneratorPromptInfo):

@@ -108,10 +108,11 @@ def create_prompt():
     prompt_info_json = request.json
 
     try:
-        prompt_info = GeneratorPromptInfoValidator.validate_python(prompt_info_json)
-    except ValidationError as e:   
+        prompt_info = GeneratorPromptInfoValidator.validate_python(
+            prompt_info_json)
+    except ValidationError as e:
         return e.errors(include_input=False), 400
-        
+
     tag_names = prompt_info.get('tags')
     if tag_names and len(tag_names) > MAX_TAGS_PER_GENERATOR_PROMPT:
         abort(413, "POST '/prompt' body contains too many tags")
@@ -129,7 +130,11 @@ def create_prompt():
     tags = PromptTag.get_or_create_all(
         tag_names, creator) if tag_names else None
 
-    prompt = GeneratorPrompt(prompt_info['text'], tags=tags, creator=creator)
+    # default to not chooseable in random
+    chooseable_in_random = prompt_info.get('chooseable_in_random', False)
+
+    prompt = GeneratorPrompt(
+        prompt_info['text'], tags=tags, creator=creator, chooseable_in_random=chooseable_in_random)
 
     db.session.add(prompt)
 
